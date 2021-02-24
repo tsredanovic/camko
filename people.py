@@ -29,7 +29,7 @@ class Person:
     def msg_door(self):
         return '`{}` is at the door at `{}`.'.format(
             self.name,
-            self.detected_at.astimezone(pytz.timezone(TIMEZONE)).strftime("%H:%M:%S, %d/%m/%Y")
+            self.detected_at.astimezone(pytz.timezone(TIMEZONE)).strftime('%H:%M:%S, %d/%m/%Y')
         )
 
     @property

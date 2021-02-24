@@ -1,30 +1,29 @@
-from datetime import datetime, timezone
+import logging
+from datetime import datetime
 
 import cv2
 import face_recognition
 import numpy as np
 import pytz
 
-from discord import report_to_discord
+from camera import VideoStream
+from discord import DiscordReporter
 from people import load_people, unknown_person
-from settings import DETECTED_AT_THRESHOLD
+from settings import DETECTED_AT_THRESHOLD, RTSP_STREAM_URL, DISCORD_WEBHOOK_URL
 
 
 def get_frame():
     # Grab a single frame of video
-    ret, frame = video_capture.read()
-
-    # Resize frame of video to 1/4 size for faster face recognition processing
-    small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+    frame = video_stream.read()
 
     # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
-    rgb_small_frame = small_frame[:, :, ::-1]
+    rgb_frame = frame[:, :, ::-1]
 
-    return frame, rgb_small_frame
+    return frame, rgb_frame
 
 
 def find_people_in_frame(rgb_small_frame, now):
-    # Find all the faces and face encodings in the current frame of video
+    # Find all face locations and face encodings in the current frame of video
     frame_face_locations = face_recognition.face_locations(rgb_small_frame)
     frame_face_encodings = face_recognition.face_encodings(rgb_small_frame, frame_face_locations)
 
@@ -48,45 +47,30 @@ def find_people_in_frame(rgb_small_frame, now):
     return frame_people
 
 
-def draw_on_frame(frame, frame_person):
-    top, right, bottom, left = frame_person.last_seen_face_location
-    top *= 4
-    right *= 4
-    bottom *= 4
-    left *= 4
-    # Draw a box around the face
-    cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
-    # Draw a label with a name below the face
-    cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
-    cv2.putText(frame, frame_person.name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
-
-
-def save_frame(frame, frame_person):
-    cv2.imwrite(
-        'frame_{}_{}.png'.format(
-            frame_person.detected_at_ts,
-            frame_person.name.replace(' ', '_').lower()
-        ),
-        frame
-    )
-
+# Init logging
+logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S', level=logging.INFO)
 
 # Load people
+logging.info('Loading people.')
 people_ordered_dict = load_people()
 people_face_encodings = [person.face_encoding for person in people_ordered_dict.values()]
 
-# Get a reference to webcam #0 (the default one)
-video_capture = cv2.VideoCapture(0)
-# Set font
-font = cv2.FONT_HERSHEY_DUPLEX
+logging.info('Initializing camera.')
+# Get a reference to video stream
+video_stream = VideoStream(RTSP_STREAM_URL).start()
 
+logging.info('Initializing discord reporter.')
+discord_reporter = DiscordReporter(DISCORD_WEBHOOK_URL).start()
+
+logging.info('Looping.')
 while True:
     now = datetime.now(tz=pytz.UTC)
+    logging.info('Parsing frame.')
 
     # Get frame
-    frame, rgb_small_frame = get_frame()
+    frame, rgb_frame = get_frame()
     # Find people in frame
-    frame_people = find_people_in_frame(rgb_small_frame, now)
+    frame_people = find_people_in_frame(rgb_frame, now)
 
     # Process found people
     for frame_person in frame_people:
@@ -100,4 +84,5 @@ while True:
         frame_person.detected_img = cv2.imencode('.png', frame)[1].tobytes()
 
         # Report to discord
-        report_to_discord(frame_person)
+        logging.info('Reporting to discord: {}.'.format(frame_person.name))
+        discord_reporter.report(frame_person)
