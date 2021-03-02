@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from time import sleep
 
 import cv2
 import face_recognition
@@ -8,8 +9,8 @@ import pytz
 
 from camera import VideoStream
 from discord import DiscordReporter
-from people import load_people, unknown_person
-from settings import DETECTED_AT_THRESHOLD, RTSP_STREAM_URL, DISCORD_WEBHOOK_URL
+from people import FramePerson
+from settings import RTSP_STREAM_URL, DISCORD_WEBHOOK_URL, PEOPLE_FORGET_AFTER_UNSEEN_SEC, PEOPLE_SEEN_COUNT_TO_REPORT
 
 
 def get_frame():
@@ -22,38 +23,33 @@ def get_frame():
     return frame, rgb_frame
 
 
-def find_people_in_frame(rgb_small_frame, now):
-    # Find all face locations and face encodings in the current frame of video
-    frame_face_locations = face_recognition.face_locations(rgb_small_frame)
-    frame_face_encodings = face_recognition.face_encodings(rgb_small_frame, frame_face_locations)
-
-    frame_people = []
-    for i, frame_face_encoding in enumerate(frame_face_encodings):
+def find_best_match(frame_face_encoding, people_face_encodings):
+    # Try to find match in current people
+    match_person = None
+    if people_face_encodings:
         # Find all matches with people
         matches = face_recognition.compare_faces(people_face_encodings, frame_face_encoding)
 
         # Find best match
         face_distances = face_recognition.face_distance(people_face_encodings, frame_face_encoding)
         best_match_index = np.argmin(face_distances)
+
         if matches[best_match_index]:
-            person = people_ordered_dict[best_match_index]
-        else:
-            person = unknown_person
+            # Match found
+            match_person = people[best_match_index]
+            match_person.seen_count += 1
+            match_person.last_seen_at = now
 
-        person.last_seen_at = now
-        person.last_seen_face_location = frame_face_locations[i]
-        frame_people.append(person)
-
-    return frame_people
+    return match_person
 
 
 # Init logging
 logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S', level=logging.INFO)
 
 # Load people
-logging.info('Loading people.')
-people_ordered_dict = load_people()
-people_face_encodings = [person.face_encoding for person in people_ordered_dict.values()]
+#logging.info('Loading people.')
+#people_ordered_dict = load_people()
+#people_face_encodings = [person.face_encoding for person in people_ordered_dict.values()]
 
 logging.info('Initializing camera.')
 # Get a reference to video stream
@@ -63,26 +59,39 @@ logging.info('Initializing discord reporter.')
 discord_reporter = DiscordReporter(DISCORD_WEBHOOK_URL).start()
 
 logging.info('Looping.')
+people = []
 while True:
     now = datetime.now(tz=pytz.UTC)
     logging.info('Parsing frame.')
 
     # Get frame
     frame, rgb_frame = get_frame()
-    # Find people in frame
-    frame_people = find_people_in_frame(rgb_frame, now)
 
-    # Process found people
-    for frame_person in frame_people:
-        # Check if they should be detected (DETECTED_AT_THRESHOLD passed)
-        if (frame_person.last_seen_at - frame_person.detected_at).total_seconds() < DETECTED_AT_THRESHOLD:
-            continue
+    # Find all face locations and face encodings in the current frame of video
+    frame_face_locations = face_recognition.face_locations(rgb_frame)
+    frame_face_encodings = face_recognition.face_encodings(rgb_frame, frame_face_locations)
 
-        # Update detected_at
-        frame_person.detected_at = now
-        frame_person.detected_face_location = frame_person.last_seen_face_location
-        frame_person.detected_img = cv2.imencode('.png', frame)[1].tobytes()
+    # Extract face_encodings of all current people
+    people_face_encodings = [person.face_encoding for person in people]
+    for frame_face_encoding in frame_face_encodings:
+        match_person = find_best_match(frame_face_encoding, people_face_encodings)
 
-        # Report to discord
-        logging.info('Reporting to discord: {}.'.format(frame_person.name))
-        discord_reporter.report(frame_person)
+        # If the match was not found create new person
+        if not match_person:
+            person = FramePerson(frame_face_encoding, now)
+            people.append(person)
+
+    # report people if they have not been reported and have been seen PEOPLE_SEEN_COUNT_TO_REPORT times
+    # forget people if they have not been seen for PEOPLE_FORGET_AFTER_UNSEEN_SEC seconds
+    next_people = []
+    for person in people:
+        if not person.reported and person.seen_count >= PEOPLE_SEEN_COUNT_TO_REPORT:
+            person.reported = True
+            #discord_reporter.report(person)
+
+        if person.unseen_for_seconds < PEOPLE_FORGET_AFTER_UNSEEN_SEC:
+            next_people.append(person)
+    people = next_people
+
+    for person in people:
+        person.print_details()

@@ -3,46 +3,57 @@ import os
 from collections import OrderedDict
 from datetime import datetime
 
-import face_recognition
 import pytz
 
-from settings import PEOPLE_JSON_PATH, PEOPLE_IMG_DIR, TIMEZONE
+from settings import PEOPLE_JSON_PATH, PEOPLE_IMG_DIR, TIMEZONE, PEOPLE_ID_LIMIT
 
 
-class Person:
-    last_seen_at = datetime.min.replace(tzinfo=pytz.UTC)
-    last_seen_face_location = None
+class IdGenerator:
+    current_id = 0
 
-    detected_at = datetime.min.replace(tzinfo=pytz.UTC)
-    detected_face_location = None
-    detected_img = None
+    def generate_id(self):
+        if self.current_id == PEOPLE_ID_LIMIT - 1:
+            self.current_id = 0
+        self.current_id += 1
+        return self.current_id
 
-    def __init__(self, name, image_path=None):
-        self.name = name
 
-        if image_path:
-            image = face_recognition.load_image_file(image_path)
-            self.face_encoding = face_recognition.face_encodings(image)[0]
-        else:
-            self.face_encoding = None
+id_gen = IdGenerator()
 
-    def msg_door(self):
-        return '`{}` is at the door at `{}`.'.format(
-            self.name,
-            self.detected_at.astimezone(pytz.timezone(TIMEZONE)).strftime('%H:%M:%S, %d/%m/%Y')
+
+class FramePerson:
+    seen_count = 1
+    reported = False
+
+    def __init__(self, face_encoding, now=datetime.now(tz=pytz.UTC)):
+        self.id = id_gen.generate_id()
+        self.first_seen_at = now
+        self.last_seen_at = now
+
+        self.face_encoding = face_encoding
+
+    def print_details(self):
+        details = 'Person `{}`:\n\tFirst seen at: `{}`\n\tLast seen at: `{}`\n\tUnseen for seconds: `{}`\n\tSeen count: `{}`\n\tReported: `{}`'.format(
+            self.id,
+            self.first_seen_at.astimezone(pytz.timezone(TIMEZONE)).strftime('%H:%M:%S, %d/%m/%Y'),
+            self.last_seen_at.astimezone(pytz.timezone(TIMEZONE)).strftime('%H:%M:%S, %d/%m/%Y'),
+            self.unseen_for_seconds,
+            self.seen_count,
+            self.reported,
         )
+        print(details)
 
     @property
-    def detected_at_ts(self):
-        return int(datetime.timestamp(self.detected_at) * 1000)
+    def unseen_for_seconds(self):
+        return (datetime.now(tz=pytz.UTC) - self.last_seen_at).total_seconds()
 
     def __repr__(self):
-        return self.name
+        return self.id
 
     def __str__(self):
         return self.__repr__()
 
-
+"""
 def load_people():
     # Read people data from json file
     with open(PEOPLE_JSON_PATH) as json_file:
@@ -58,5 +69,5 @@ def load_people():
 
     return people_ordered_dict
 
-
 unknown_person = Person(name='Someone')
+"""
