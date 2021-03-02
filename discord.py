@@ -1,7 +1,15 @@
+import logging
 from queue import Queue
 from threading import Thread
 
 import requests
+
+
+class DiscordReportData:
+    def __init__(self, image, image_name, message):
+        self.image = image
+        self.image_name = image_name
+        self.message = message
 
 
 class DiscordReporter:
@@ -17,15 +25,17 @@ class DiscordReporter:
     def check_and_report(self):
         try:
             while True:
-                person = self.Q.get()
+                data = self.Q.get()
+
                 requests.post(url=self.webhook_url,
                               files={
-                                  'content': (None, person.msg_door()),
-                                  'file': ('{}.png'.format(person.name.replace(' ', '_').lower()), person.detected_img)
+                                  'content': (None, data.message),
+                                  'file': (data.image_name, data.image)
                               })
+
                 self.Q.task_done()
         except Exception as e:
-            print('Got error: {}'.format(str(e)))
+            logging.error(str(e))
 
-    def report(self, person):
-        self.Q.put(person)
+    def report(self, data):
+        self.Q.put(data)

@@ -1,3 +1,4 @@
+import logging
 from queue import Queue
 from threading import Thread
 
@@ -26,7 +27,7 @@ class VideoStream:
                     while self.Q.qsize() > 1:
                         self.Q.get()
         except Exception as e:
-            print('Got error: {}'.format(str(e)))
+            logging.error(str(e))
 
     def read(self):
         return self.Q.get()

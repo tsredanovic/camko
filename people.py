@@ -1,8 +1,8 @@
 import json
 import os
-from collections import OrderedDict
 from datetime import datetime
 
+import face_recognition
 import pytz
 
 from settings import PEOPLE_JSON_PATH, PEOPLE_IMG_DIR, TIMEZONE, PEOPLE_ID_LIMIT
@@ -24,6 +24,7 @@ id_gen = IdGenerator()
 class FramePerson:
     seen_count = 1
     reported = False
+    name = None
 
     def __init__(self, face_encoding, now=datetime.now(tz=pytz.UTC)):
         self.id = id_gen.generate_id()
@@ -33,15 +34,21 @@ class FramePerson:
         self.face_encoding = face_encoding
 
     def print_details(self):
-        details = 'Person `{}`:\n\tFirst seen at: `{}`\n\tLast seen at: `{}`\n\tUnseen for seconds: `{}`\n\tSeen count: `{}`\n\tReported: `{}`'.format(
+        details = 'Person `{}`:\n\tFirst seen at: `{}`\n\tLast seen at: `{}`\n\tUnseen for seconds: `{}`\n\tSeen count: `{}`\n\tReported: `{}`\n\tName: `{}`'.format(
             self.id,
             self.first_seen_at.astimezone(pytz.timezone(TIMEZONE)).strftime('%H:%M:%S, %d/%m/%Y'),
             self.last_seen_at.astimezone(pytz.timezone(TIMEZONE)).strftime('%H:%M:%S, %d/%m/%Y'),
             self.unseen_for_seconds,
             self.seen_count,
             self.reported,
+            self.name,
         )
         print(details)
+
+    def door_message(self):
+        return '`{}` is at the door at.'.format(
+            self.name if self.name else 'Person #{}'.format(self.id)
+        )
 
     @property
     def unseen_for_seconds(self):
@@ -53,21 +60,19 @@ class FramePerson:
     def __str__(self):
         return self.__repr__()
 
-"""
+
 def load_people():
     # Read people data from json file
     with open(PEOPLE_JSON_PATH) as json_file:
-        people_data = json.load(json_file)
+        people_json = json.load(json_file)
 
-    people_ordered_dict = OrderedDict()
+    known_people_face_encodings = []
+    known_people_names = []
 
-    for i, person_data in enumerate(people_data):
-        people_ordered_dict[i] = Person(
-            name=person_data['name'],
-            image_path=os.path.join(PEOPLE_IMG_DIR, person_data['image_path'])
-        )
+    for person_json in people_json:
+        image = face_recognition.load_image_file(os.path.join(PEOPLE_IMG_DIR, person_json['image_path']))
+        face_encoding = face_recognition.face_encodings(image)[0]
+        known_people_face_encodings.append(face_encoding)
+        known_people_names.append(person_json['name'])
 
-    return people_ordered_dict
-
-unknown_person = Person(name='Someone')
-"""
+    return known_people_face_encodings, known_people_names

@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from time import sleep
 
 import cv2
 import face_recognition
@@ -8,8 +7,8 @@ import numpy as np
 import pytz
 
 from camera import VideoStream
-from discord import DiscordReporter
-from people import FramePerson
+from discord import DiscordReporter, DiscordReportData
+from people import FramePerson, load_people
 from settings import RTSP_STREAM_URL, DISCORD_WEBHOOK_URL, PEOPLE_FORGET_AFTER_UNSEEN_SEC, PEOPLE_SEEN_COUNT_TO_REPORT
 
 
@@ -47,9 +46,8 @@ def find_best_match(frame_face_encoding, people_face_encodings):
 logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S', level=logging.INFO)
 
 # Load people
-#logging.info('Loading people.')
-#people_ordered_dict = load_people()
-#people_face_encodings = [person.face_encoding for person in people_ordered_dict.values()]
+logging.info('Loading people.')
+known_people_face_encodings, known_people_names = load_people()
 
 logging.info('Initializing camera.')
 # Get a reference to video stream
@@ -62,7 +60,6 @@ logging.info('Looping.')
 people = []
 while True:
     now = datetime.now(tz=pytz.UTC)
-    logging.info('Parsing frame.')
 
     # Get frame
     frame, rgb_frame = get_frame()
@@ -79,6 +76,14 @@ while True:
         # If the match was not found create new person
         if not match_person:
             person = FramePerson(frame_face_encoding, now)
+
+            # Try to find person in known people
+            matches = face_recognition.compare_faces(known_people_face_encodings, frame_face_encoding)
+            face_distances = face_recognition.face_distance(known_people_face_encodings, frame_face_encoding)
+            best_match_index = np.argmin(face_distances)
+            if matches[best_match_index]:
+                person.name = known_people_names[best_match_index]
+
             people.append(person)
 
     # report people if they have not been reported and have been seen PEOPLE_SEEN_COUNT_TO_REPORT times
@@ -87,11 +92,10 @@ while True:
     for person in people:
         if not person.reported and person.seen_count >= PEOPLE_SEEN_COUNT_TO_REPORT:
             person.reported = True
-            #discord_reporter.report(person)
+            report_data = DiscordReportData(cv2.imencode('.png', frame)[1].tobytes(), '{}.png'.format(person.id), person.door_message())
+            logging.info('Reporting to discord.')
+            discord_reporter.report(report_data)
 
         if person.unseen_for_seconds < PEOPLE_FORGET_AFTER_UNSEEN_SEC:
             next_people.append(person)
     people = next_people
-
-    for person in people:
-        person.print_details()
