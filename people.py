@@ -68,7 +68,7 @@ class FramePerson:
         return (datetime.now(tz=pytz.UTC) - self.last_seen_at).total_seconds()
 
     def __repr__(self):
-        return self.id
+        return 'Person `{}`'.format(self.id)
 
     def __str__(self):
         return self.__repr__()
