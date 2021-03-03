@@ -1,13 +1,15 @@
 import logging
 from queue import Queue
 from threading import Thread
+from time import sleep
 
 import cv2
 
 
 class VideoStream:
     def __init__(self, path, queue_size=3):
-        self.stream = cv2.VideoCapture(path)
+        self.path = path
+        self.stream = cv2.VideoCapture(self.path)
         self.Q = Queue(maxsize=queue_size)
 
     def start(self):
@@ -15,11 +17,27 @@ class VideoStream:
         Thread(target=self.update, daemon=True).start()
         return self
 
+    def reconnect(self):
+        while True:
+            logging.info('Camera reconnecting.')
+            self.stream = cv2.VideoCapture(self.path)
+            if self.stream.isOpened():
+                logging.info('Camera reconnected.')
+                break
+
+            sleep(5)
+
     def update(self):
         try:
             while True:
                 if not self.Q.full():
                     grabbed, frame = self.stream.read()
+
+                    if not grabbed:
+                        logging.info('Camera disconnected.')
+                        self.stream.release()
+                        self.reconnect()
+                        continue
 
                     self.Q.put(frame)
 
