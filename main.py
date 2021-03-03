@@ -9,28 +9,18 @@ import pytz
 from camera import VideoStream
 from discord import DiscordReporter, DiscordReportData
 from people import FramePerson, load_people
-from settings import RTSP_STREAM_URL, DISCORD_WEBHOOK_URL, PEOPLE_FORGET_AFTER_UNSEEN_SEC, PEOPLE_SEEN_COUNT_TO_REPORT
+from settings import STREAM_URL, DISCORD_WEBHOOK_URL, PEOPLE_FORGET_AFTER_UNSEEN_SEC, PEOPLE_SEEN_COUNT_TO_REPORT, PEOPLE_DRAW
 
 
-def get_frame():
-    # Grab a single frame of video
-    frame = video_stream.read()
-
-    # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
-    rgb_frame = frame[:, :, ::-1]
-
-    return frame, rgb_frame
-
-
-def find_best_match(frame_face_encoding, people_face_encodings):
+def find_best_match(face_encoding, face_encodings):
     # Try to find match in current people
     match_person = None
-    if people_face_encodings:
+    if face_encodings:
         # Find all matches with people
-        matches = face_recognition.compare_faces(people_face_encodings, frame_face_encoding)
+        matches = face_recognition.compare_faces(face_encodings, face_encoding)
 
         # Find best match
-        face_distances = face_recognition.face_distance(people_face_encodings, frame_face_encoding)
+        face_distances = face_recognition.face_distance(face_encodings, face_encoding)
         best_match_index = np.argmin(face_distances)
 
         if matches[best_match_index]:
@@ -49,20 +39,27 @@ logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', datefmt='%d/
 logging.info('Loading people.')
 known_people_face_encodings, known_people_names = load_people()
 
-logging.info('Initializing camera.')
 # Get a reference to video stream
-video_stream = VideoStream(RTSP_STREAM_URL).start()
+logging.info('Initializing camera.')
+video_stream = VideoStream(STREAM_URL).start()
 
 logging.info('Initializing discord reporter.')
 discord_reporter = DiscordReporter(DISCORD_WEBHOOK_URL).start()
+
+# Drawing
+font = cv2.FONT_HERSHEY_DUPLEX
+color = (36, 255, 12)
 
 logging.info('Looping.')
 people = []
 while True:
     now = datetime.now(tz=pytz.UTC)
 
-    # Get frame
-    frame, rgb_frame = get_frame()
+    # Grab a single frame of video
+    frame = video_stream.read()
+
+    # Convert the frame from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
+    rgb_frame = frame[:, :, ::-1]
 
     # Find all face locations and face encodings in the current frame of video
     frame_face_locations = face_recognition.face_locations(rgb_frame)
@@ -70,11 +67,11 @@ while True:
 
     # Extract face_encodings of all current people
     people_face_encodings = [person.face_encoding for person in people]
-    for frame_face_encoding in frame_face_encodings:
-        match_person = find_best_match(frame_face_encoding, people_face_encodings)
+    for i, frame_face_encoding in enumerate(frame_face_encodings):
+        person = find_best_match(frame_face_encoding, people_face_encodings)
 
         # If the match was not found create new person
-        if not match_person:
+        if not person:
             person = FramePerson(frame_face_encoding, now)
 
             # Try to find person in known people
@@ -85,6 +82,15 @@ while True:
                 person.name = known_people_names[best_match_index]
 
             people.append(person)
+
+        # If PEOPLE_DRAW then draw boxes around faces
+        if PEOPLE_DRAW:
+            top, right, bottom, left = frame_face_locations[i]
+            # Draw a box around the face
+            cv2.rectangle(frame, (left, top), (right, bottom), color, 1)
+
+            # Draw a label above the face
+            cv2.putText(frame, person.label_text(), (left, top - 2), font, 0.6, color, 1)
 
     # report people if they have not been reported and have been seen PEOPLE_SEEN_COUNT_TO_REPORT times
     # forget people if they have not been seen for PEOPLE_FORGET_AFTER_UNSEEN_SEC seconds

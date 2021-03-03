@@ -45,10 +45,23 @@ class FramePerson:
         )
         print(details)
 
+    def print_slim_details(self):
+        details = 'Person `{}`:\n\tUnseen for seconds: `{}`\n\tSeen count: `{}`\n\tReported: `{}`\n\tName: `{}`'.format(
+            self.id,
+            self.unseen_for_seconds,
+            self.seen_count,
+            self.reported,
+            self.name,
+        )
+        print(details)
+
     def door_message(self):
-        return '`{}` is at the door at.'.format(
+        return '`{}` is at the door.'.format(
             self.name if self.name else 'Person #{}'.format(self.id)
         )
+
+    def label_text(self):
+        return self.name if self.name else 'Person {}'.format(self.id)
 
     @property
     def unseen_for_seconds(self):
