@@ -9,7 +9,7 @@ import pytz
 from camera import VideoStream
 from discord import DiscordReporter, DiscordReportData
 from people import FramePerson, load_people
-from settings import STREAM_URL, DISCORD_WEBHOOK_URL, PEOPLE_FORGET_AFTER_UNSEEN_SEC, PEOPLE_SEEN_COUNT_TO_REPORT, PEOPLE_DRAW
+from settings import *
 
 
 def find_best_match(face_encoding, face_encodings):
@@ -52,6 +52,7 @@ color = (36, 255, 12)
 
 logging.info('Looping.')
 people = []
+last_frame_sent_at = datetime.min.replace(tzinfo=pytz.UTC)
 while True:
     now = datetime.now(tz=pytz.UTC)
 
@@ -99,9 +100,17 @@ while True:
         if not person.reported and person.seen_count >= PEOPLE_SEEN_COUNT_TO_REPORT:
             person.reported = True
             report_data = DiscordReportData(cv2.imencode('.png', frame)[1].tobytes(), '{}.png'.format(person.id), person.door_message())
-            logging.info('Reporting to discord.')
+            logging.info('Reporting people to discord.')
             discord_reporter.report(report_data)
+            last_frame_sent_at = now
 
         if person.unseen_for_seconds < PEOPLE_FORGET_AFTER_UNSEEN_SEC:
             next_people.append(person)
     people = next_people
+
+    # send a frame if last
+    if FRAME_SEND_EVERY_SEC and (now - last_frame_sent_at).total_seconds() >= FRAME_SEND_EVERY_SEC:
+        report_data = DiscordReportData(cv2.imencode('.png', frame)[1].tobytes(), '{}.png'.format(datetime.timestamp(now)), 'Frame at `{}`.'.format(now.astimezone(pytz.timezone(TIMEZONE)).strftime('%H:%M:%S, %d/%m/%Y')))
+        logging.info('Reporting frame to discord.')
+        discord_reporter.report(report_data)
+        last_frame_sent_at = now
