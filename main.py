@@ -54,10 +54,11 @@ logging.info('Looping.')
 people = []
 last_frame_sent_at = datetime.min.replace(tzinfo=pytz.UTC)
 while True:
-    now = datetime.now(tz=pytz.UTC)
-
     # Grab a single frame of video
     frame = video_stream.read()
+
+    # Get current time
+    now = datetime.now(tz=pytz.UTC)
 
     # Convert the frame from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
     rgb_frame = frame[:, :, ::-1]
@@ -99,7 +100,7 @@ while True:
     for person in people:
         if not person.reported and person.seen_count >= PEOPLE_SEEN_COUNT_TO_REPORT:
             person.reported = True
-            report_data = DiscordReportData(cv2.imencode('.png', frame)[1].tobytes(), '{}.png'.format(person.id), person.door_message())
+            report_data = DiscordReportData(cv2.imencode('.png', frame)[1].tobytes(), '{}.png'.format(person.id), person.spotted_message())
             logging.info('Reporting people to discord.')
             discord_reporter.report(report_data)
             last_frame_sent_at = now
@@ -110,7 +111,11 @@ while True:
 
     # send a frame if last
     if FRAME_SEND_EVERY_SEC and (now - last_frame_sent_at).total_seconds() >= FRAME_SEND_EVERY_SEC:
-        report_data = DiscordReportData(cv2.imencode('.png', frame)[1].tobytes(), '{}.png'.format(datetime.timestamp(now)), 'Frame at `{}`.'.format(now.astimezone(pytz.timezone(TIMEZONE)).strftime('%H:%M:%S, %d/%m/%Y')))
+        report_data = DiscordReportData(
+            cv2.imencode('.png', frame)[1].tobytes(),
+            '{}.png'.format(datetime.timestamp(now)),
+            'Frame at `{}`.'.format(now.astimezone(pytz.timezone(TIMEZONE)).strftime('%H:%M:%S, %d/%m/%Y'))
+        )
         logging.info('Reporting frame to discord.')
         discord_reporter.report(report_data)
         last_frame_sent_at = now

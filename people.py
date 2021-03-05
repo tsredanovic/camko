@@ -60,6 +60,11 @@ class FramePerson:
             self.name if self.name else 'Person #{}'.format(self.id)
         )
 
+    def spotted_message(self):
+        return '`{}` spotted.'.format(
+            self.name if self.name else 'Person #{}'.format(self.id)
+        )
+
     def label_text(self):
         return self.name if self.name else 'Person {}'.format(self.id)
 
