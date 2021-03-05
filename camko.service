@@ -1,0 +1,14 @@
+[Unit]
+Description=Camko facial recognition notification system
+After=network.target
+
+[Service]
+Type=simple
+User=toni
+WorkingDirectory=/home/toni/camko/
+ExecStart=/home/toni/emby-webhooks/venv/bin/python main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
